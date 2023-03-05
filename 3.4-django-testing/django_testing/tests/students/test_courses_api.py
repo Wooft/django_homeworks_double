@@ -3,7 +3,8 @@ import pprint
 import pytest
 from rest_framework.test import APIClient
 from model_bakery import baker
-from students.models import Course
+from students.models import Course, Student
+
 
 @pytest.fixture
 def client():
@@ -15,14 +16,24 @@ def course_factory():
         return baker.make(Course, *args, **kwargs)
     return factory
 
-@pytest.mark.django_db
-def test_get_single_course(client, course_factory):
-    courses = course_factory(_quantity=1)
-    response = client.get('/courses/')
-    data = response.json()
-    assert len(data) == len(courses)
-    assert courses[0].name == data[0]['name']
+@pytest.fixture
+def student_factory():
+    def factory(*args, **kwargs):
+        return baker.make(Student, *args, **kwargs)
+    return factory
 
+@pytest.fixture
+def test_with_specific_settings(settings):
+    settings.MAX_STUDENTS_PER_COURSE = 1
+    assert settings.MAX_STUDENTS_PER_COURSE
+
+@pytest.mark.django_db
+def test_get_single_course(client, course_factory, student_factory):
+    students = student_factory(_quantity=5)
+    courses = course_factory(_quantity=1, students=students)
+    response = client.get(f'/courses/{courses[0].id}/')
+    data = response.json()
+    assert courses[0].name == data['name']
 
 @pytest.mark.django_db
 def test_get_list_of_sourses(client, course_factory):
@@ -88,3 +99,17 @@ def test_create_course(client):
     assert response.status_code == 201
     #Создаем курс с нужными данными, затем извлекаем его по ключу name из базы данных
     assert data['name'] == Course.objects.get(name=data['name']).name
+
+@pytest.mark.django_db
+def test_get_stoudents(client, student_factory, course_factory, settings):
+    students = student_factory(_quantity=21)
+    courses = course_factory(_quantity=1, students=students)
+    assert Student.objects.all().count() == 21
+
+@pytest.mark.django_db
+def test_students_count(student_factory, course_factory, test_with_specific_settings, client, settings):
+    settings = test_with_specific_settings
+    students = student_factory(_quantity=30)
+    courses = course_factory(_quantity=1, students=students)
+    response = client.get('/courses/')
+    data = response.json()
